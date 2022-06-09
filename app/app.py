@@ -4,16 +4,28 @@ from flask.wrappers import Response
 import paho.mqtt.client as mqtt
 import redis
 import json
+import os
 
-HOST = "10.100.100.222"
-PORT = 1883
+REDIS_HOST = os.environ.get("REDIS_HOST", "localhost")
+REDIS_PORT = os.environ.get("REDIS_POST", 6379)
+REDIS_PASSWORD = os.environ.get("REDIS_PASSWORD", "thisispassword")
 KEEP_ALIVE = 1
+
+MQTT_HOST = os.environ.get("MQTT_HOST", "localhost")
+MQTT_PORT = os.environ.get("MQTT_POST", 1883)
+
 
 app = Flask(__name__)
 
-r = redis.Redis(host=HOST, port=6379, db=1)
+r = redis.Redis(
+    host=REDIS_HOST,
+    port=REDIS_PORT,
+    db=1,
+    password=REDIS_PASSWORD
+)
 
 # MQTT
+
 
 def init_redis():
     r.set("count", 0)
@@ -26,7 +38,7 @@ init_redis()
 
 def on_connect(client, userdata, flags, rc):
     print(f"Connect with result {rc}")
-    TOPIC = [("test/count",0),("status/control",0)]
+    TOPIC = [("test/count", 0), ("status/control", 0)]
     # client.subscribe("test/count")
     client.subscribe(TOPIC)
 
@@ -36,7 +48,7 @@ def on_message(client, userdata, msg):
         print("Redis: Count")
         r.decr("count")
         # r.incr("count")
-    
+
     if str(msg.payload.decode("utf-8")) == "start":
         print("Redis Control: Start")
         r.set("control", "start")
@@ -44,6 +56,7 @@ def on_message(client, userdata, msg):
     if str(msg.payload.decode("utf-8")) == "stop":
         print("Redis Control: Stop")
         r.set("control", "stop")
+
 
 def on_subscribe(mosq, obj, mid, granted_qos):
     print(f"Start Subscribed with Qos: {granted_qos}")
@@ -59,7 +72,11 @@ client.on_message = on_message
 client.on_subscribe = on_subscribe
 client.on_publish = on_publish
 client.username_pw_set(username="mosquitto", password="mosquitto")
-client.connect(host=HOST, port=PORT, keepalive=KEEP_ALIVE)
+client.connect(
+    host=MQTT_HOST,
+    port=MQTT_PORT,
+    keepalive=KEEP_ALIVE
+)
 client.loop_start()
 # client.loop_forever()
 # Flask
@@ -84,7 +101,7 @@ def stream():
                 "count": count.decode("utf-8"),
                 "control": control.decode("utf-8")
             }
-            
+
             yield f'data: {json.dumps(ret)}\n\n'
 
     return Response(get_data(), mimetype='text/event-stream')
@@ -136,13 +153,13 @@ def reset_counter():
         "status": "reset"
     }
 
+
 @app.post("/set/<num>")
 def set_counter(num):
     r.set("count", num)
     return {
         "status": num,
     }
-
 
 
 # client.loop_stop()
